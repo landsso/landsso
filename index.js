@@ -5,7 +5,6 @@ const app = express();
 
 let browser;
 
-// 🔥 Browser launch (once)
 (async () => {
   browser = await puppeteer.launch({
     headless: "new",
@@ -13,125 +12,80 @@ let browser;
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu"
+      "--disable-blink-features=AutomationControlled"
     ]
   });
-  console.log("🚀 Browser launched once!");
+
+  console.log("🚀 Browser ready");
 })();
 
-app.get("/", (req, res) => {
-  res.send("Token API Running...");
-});
-
-
-// 🔥 TOKEN ROUTE
 app.get("/token", async (req, res) => {
   let page;
 
   try {
     page = await browser.newPage();
 
-    // =========================
-    // 1. LOGIN (FIXED)
-    // =========================
+    // stealth
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    );
+
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", {
+        get: () => false
+      });
+    });
+
+    // LOGIN
     await page.goto("https://lsg-land-owner.land.gov.bd/login", {
       waitUntil: "networkidle2",
       timeout: 60000
     });
 
-    await page.waitForSelector('input[name="username"]');
-
-    await page.type('input[name="username"]', '1989182139', { delay: 50 });
-    await page.type('input[name="password"]', 'Itxj@91588', { delay: 50 });
+    await page.type('input[name="username"]', '1989182139', { delay: 30 });
+    await page.type('input[name="password"]', 'Itxj@91588', { delay: 30 });
 
     await Promise.all([
       page.click('button[type="submit"]'),
       page.waitForNavigation({ waitUntil: "networkidle2" })
     ]);
 
-    console.log("After login URL:", page.url());
-
-    // =========================
-    // 2. SSO LOGIN
-    // =========================
+    // SSO
     await page.goto("https://dlrms.land.gov.bd/citizen/sso-login", {
       waitUntil: "networkidle2"
     });
 
-    // wait redirect (important)
     await new Promise(r => setTimeout(r, 6000));
 
-    const finalUrl = page.url();
-    console.log("Final URL:", finalUrl);
-
-    // =========================
-    // 3. GET CODE
-    // =========================
-    const match = finalUrl.match(/code=([^&]+)/);
-
-    if (!match) {
-      await page.close();
-      return res.json({
-        success: false,
-        error: "Code not found",
-        current_url: finalUrl
-      });
-    }
-
-    const code = match[1];
-
-    // =========================
-    // 4. GET COOKIE
-    // =========================
+    // cookie
     const cookies = await page.cookies();
+    const dlrms = cookies.find(c => c.name === "dlrms_app_token");
 
-    const dlrmsCookie = cookies.find(c => c.name === "dlrms_app_token");
-
-    // =========================
-    // 5. JWT GENERATE
-    // =========================
-    const jwtData = await page.evaluate(async (code) => {
-      const r = await fetch("https://dlrms.land.gov.bd/api/sso-authorize-code-grant", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          code,
-          isCitizen: true,
-          redirect_uri: "https://dlrms.land.gov.bd/citizen-callback"
-        })
-      });
-
+    // JWT extract (real trick)
+    const jwt = await page.evaluate(async () => {
+      const r = await fetch(
+        "https://gateway.dlrms.land.gov.bd/core-api/api/citizens/auth/profile?is_fetch_from_sso=1"
+      );
       return await r.json();
-    }, code);
+    });
 
     await page.close();
 
-    // =========================
-    // 6. RESPONSE
-    // =========================
     res.json({
       success: true,
-      code: code,
-      dlrms_token: dlrmsCookie ? dlrmsCookie.value : null,
-      user_token: jwtData.access_token || null
+      dlrms_token: dlrms ? dlrms.value : null,
+      user_token: jwt?.token || null,
+      time: Date.now()
     });
 
-  } catch (err) {
-    console.error("FULL ERROR:", err);
-
+  } catch (e) {
     if (page) await page.close();
 
     res.json({
       success: false,
-      error: err.message
+      error: e.message
     });
   }
 });
 
-
-// =========================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on port " + PORT));
+app.listen(10000, () => console.log("Server running"));
