@@ -25,7 +25,7 @@ app.get("/", (req, res) => {
 });
 
 
-// 🔥 MAIN TOKEN ROUTE
+// 🔥 TOKEN ROUTE
 app.get("/token", async (req, res) => {
   let page;
 
@@ -33,21 +33,24 @@ app.get("/token", async (req, res) => {
     page = await browser.newPage();
 
     // =========================
-    // 1. LOGIN
+    // 1. LOGIN (FIXED)
     // =========================
     await page.goto("https://lsg-land-owner.land.gov.bd/login", {
       waitUntil: "networkidle2",
       timeout: 60000
     });
 
-    await page.type('input[name="username"]', '1989182139');
-    await page.type('input[name="password"]', 'Itxj@91588');
+    await page.waitForSelector('input[name="username"]');
 
-    await page.click('button[type="submit"]');
+    await page.type('input[name="username"]', '1989182139', { delay: 50 });
+    await page.type('input[name="password"]', 'Itxj@91588', { delay: 50 });
 
-    // ⏳ wait (fixed)
-    await new Promise(r => setTimeout(r, 7000));
+    await Promise.all([
+      page.click('button[type="submit"]'),
+      page.waitForNavigation({ waitUntil: "networkidle2" })
+    ]);
 
+    console.log("After login URL:", page.url());
 
     // =========================
     // 2. SSO LOGIN
@@ -56,19 +59,21 @@ app.get("/token", async (req, res) => {
       waitUntil: "networkidle2"
     });
 
-    await new Promise(r => setTimeout(r, 7000));
+    // wait redirect (important)
+    await new Promise(r => setTimeout(r, 6000));
 
+    const finalUrl = page.url();
+    console.log("Final URL:", finalUrl);
 
     // =========================
     // 3. GET CODE
     // =========================
-    const finalUrl = page.url();
-
     const match = finalUrl.match(/code=([^&]+)/);
 
     if (!match) {
       await page.close();
       return res.json({
+        success: false,
         error: "Code not found",
         current_url: finalUrl
       });
@@ -76,14 +81,12 @@ app.get("/token", async (req, res) => {
 
     const code = match[1];
 
-
     // =========================
-    // 4. GET COOKIE (DLRMS TOKEN)
+    // 4. GET COOKIE
     // =========================
     const cookies = await page.cookies();
 
     const dlrmsCookie = cookies.find(c => c.name === "dlrms_app_token");
-
 
     // =========================
     // 5. JWT GENERATE
@@ -103,7 +106,6 @@ app.get("/token", async (req, res) => {
 
       return await r.json();
     }, code);
-
 
     await page.close();
 
