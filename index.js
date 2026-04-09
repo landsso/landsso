@@ -5,7 +5,7 @@ const app = express();
 
 let browser;
 
-// 🔥 Browser launch (same as yours)
+// 🔥 Browser launch (once)
 (async () => {
   browser = await puppeteer.launch({
     headless: "new",
@@ -45,7 +45,8 @@ app.get("/token", async (req, res) => {
 
     await page.click('button[type="submit"]');
 
-    await page.waitForTimeout(6000);
+    // ⏳ wait (fixed)
+    await new Promise(r => setTimeout(r, 7000));
 
 
     // =========================
@@ -55,7 +56,7 @@ app.get("/token", async (req, res) => {
       waitUntil: "networkidle2"
     });
 
-    await page.waitForTimeout(6000);
+    await new Promise(r => setTimeout(r, 7000));
 
 
     // =========================
@@ -69,7 +70,7 @@ app.get("/token", async (req, res) => {
       await page.close();
       return res.json({
         error: "Code not found",
-        url: finalUrl
+        current_url: finalUrl
       });
     }
 
@@ -110,17 +111,19 @@ app.get("/token", async (req, res) => {
     // 6. RESPONSE
     // =========================
     res.json({
+      success: true,
       code: code,
       dlrms_token: dlrmsCookie ? dlrmsCookie.value : null,
       user_token: jwtData.access_token || null
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("FULL ERROR:", err);
 
     if (page) await page.close();
 
     res.json({
+      success: false,
       error: err.message
     });
   }
